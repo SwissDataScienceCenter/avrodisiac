@@ -1,11 +1,11 @@
 use std::{
     ffi::OsStr,
-    fs::{self, DirEntry},
-    io,
+    fs::{self},
     path::{Path, PathBuf},
 };
 
-use avro_rs::{schema_compatibility::SchemaCompatibility, Schema};
+use anyhow::Result;
+use apache_avro::{schema_compatibility::SchemaCompatibility, Schema};
 use clap::{arg, command, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -31,7 +31,7 @@ enum Commands {
     },
 }
 
-fn visit_dirs(dir: &Path, cb: &dyn Fn(&Path) -> usize) -> io::Result<usize> {
+fn visit_dirs(dir: &Path, cb: &dyn Fn(&Path) -> Result<usize>) -> Result<usize> {
     let mut errors = 0;
     if dir.is_dir() {
         if dir.file_name() == Some(OsStr::new(".git")) {
@@ -43,60 +43,62 @@ fn visit_dirs(dir: &Path, cb: &dyn Fn(&Path) -> usize) -> io::Result<usize> {
             if path.is_dir() {
                 visit_dirs(&path, cb)?;
             } else {
-                errors += cb(&entry.path());
+                errors += cb(&entry.path())?;
             }
         }
     } else {
-        errors += cb(&dir);
+        errors += cb(dir)?;
     }
     Ok(errors)
 }
 
-fn validate_schema(file: &Path) -> usize {
+fn validate_schema(file: &Path) -> Result<usize> {
     if file.is_file() && file.extension() == Some(OsStr::new("avsc")) {
-        let schema = Schema::parse_str(
-            String::from_utf8_lossy(
-                &fs::read(file).expect(&format!("Unable to read file {:?}", file)),
-            )
-            .as_ref(),
-        );
+        let schema = Schema::parse_str(String::from_utf8_lossy(&fs::read(file)?).as_ref());
         if let Err(err) = schema {
-            println!("{}: {:?}", file.display(), err.to_string());
-            return 1;
+            eprintln!("{}: {:?}", file.display(), err.to_string());
+            return Ok(1);
         }
     }
-    0
+    Ok(0)
 }
 
-fn compare_schemas(old: &Path, new: &Path) -> io::Result<bool> {
+fn compare_schemas(old: &Path, new: &Path) -> Result<()> {
     let old_schema = Schema::parse_str(
-        String::from_utf8_lossy(&fs::read(old).expect(&format!("Unable to read file {:?}", old)))
-            .as_ref(),
+        String::from_utf8_lossy(
+            &fs::read(old)
+                .unwrap_or_else(|e| panic!("Unable to read file {}: {}", old.display(), e)),
+        )
+        .as_ref(),
     )
-    .expect(format!("Couldn't parse schema: {}", old.display()).as_str());
+    .unwrap_or_else(|e| panic!("Couldn't parse schema {}:{}", old.display(), e));
     let new_schema = Schema::parse_str(
-        String::from_utf8_lossy(&fs::read(new).expect(&format!("Unable to read file {:?}", new)))
-            .as_ref(),
+        String::from_utf8_lossy(
+            &fs::read(new)
+                .unwrap_or_else(|e| panic!("Unable to read file {}: {}", new.display(), e)),
+        )
+        .as_ref(),
     )
-    .expect(format!("Couldn't parse schema: {}", new.display()).as_str());
-    Ok(SchemaCompatibility::mutual_read(&new_schema, &old_schema))
+    .unwrap_or_else(|e| panic!("Couldn't parse schema {}:{}", new.display(), e));
+    SchemaCompatibility::mutual_read(&new_schema, &old_schema)?;
+    Ok(())
 }
 
-fn main() -> Result<(), io::Error> {
+fn main() -> Result<()> {
     let args = Cli::parse();
 
     match args.command {
         Commands::Lint { path } => {
             let errors = visit_dirs(&path, &validate_schema)?;
             if errors > 0 {
-                println!("Found {} errors.", errors);
+                eprintln!("Found {} errors.", errors);
                 std::process::exit(1);
             }
         }
         Commands::Compat { old, new } => {
             let compatible = compare_schemas(&old, &new);
-            if compatible.is_err() || compatible.is_ok_and(|b| !b) {
-                println!("Schemas aren't compatible");
+            if let Err(e) = compatible {
+                eprintln!("Schemas incompatible: {} [{:?}]", e, e.source());
                 std::process::exit(1);
             }
         }
