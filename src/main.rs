@@ -31,36 +31,37 @@ enum Commands {
     },
 }
 
-fn visit_dirs(dir: &Path, cb: &dyn Fn(&Path) -> Result<usize>) -> Result<usize> {
-    let mut errors = 0;
+fn visit_dirs(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut result = Vec::new();
     if dir.is_dir() {
         if dir.file_name() == Some(OsStr::new(".git")) {
-            return Ok(0);
+            return Ok(result);
         }
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {
-                visit_dirs(&path, cb)?;
+                result.extend(visit_dirs(&path)?);
             } else {
-                errors += cb(&entry.path())?;
+                result.push(entry.path());
             }
         }
     } else {
-        errors += cb(dir)?;
+        result.push(dir.to_path_buf());
     }
-    Ok(errors)
+    Ok(result)
 }
 
-fn validate_schema(file: &Path) -> Result<usize> {
-    if file.is_file() && file.extension() == Some(OsStr::new("avsc")) {
-        let schema = Schema::parse_str(String::from_utf8_lossy(&fs::read(file)?).as_ref());
-        if let Err(err) = schema {
-            eprintln!("{}: {:?}", file.display(), err.to_string());
-            return Ok(1);
-        }
-    }
-    Ok(0)
+fn validate_schemas(path: &Path) -> Result<()> {
+    let files = visit_dirs(path)?;
+    let schemas: Vec<_> = files
+        .iter()
+        .filter(|f| f.extension().is_some_and(|e| e == "avsc"))
+        .map(|f| String::from_utf8_lossy(&fs::read(f).expect("Unable to read file")).into_owned())
+        .collect();
+    let schemas: Vec<&str> = schemas.iter().map(String::as_str).collect();
+    let _ = Schema::parse_list(&schemas)?;
+    Ok(())
 }
 
 fn compare_schemas(old: &Path, new: &Path) -> Result<()> {
@@ -88,13 +89,13 @@ fn main() -> Result<()> {
     let args = Cli::parse();
 
     match args.command {
-        Commands::Lint { path } => {
-            let errors = visit_dirs(&path, &validate_schema)?;
-            if errors > 0 {
-                eprintln!("Found {} errors.", errors);
+        Commands::Lint { path } => match validate_schemas(&path) {
+            Err(err) => {
+                eprintln!("Schema(s) indalid: {:?}", err);
                 std::process::exit(1);
             }
-        }
+            Ok(_) => {}
+        },
         Commands::Compat { old, new } => {
             let compatible = compare_schemas(&old, &new);
             if let Err(e) = compatible {
