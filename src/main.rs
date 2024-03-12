@@ -28,6 +28,8 @@ enum Commands {
         old: PathBuf,
         #[arg(required = true)]
         new: PathBuf,
+        #[arg(short, long)]
+        mutual: bool,
     },
 }
 
@@ -69,7 +71,7 @@ fn validate_schemas(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn compare_schemas(old: &Path, new: &Path) -> Result<()> {
+fn compare_schemas(old: &Path, new: &Path, mutual: bool) -> Result<()> {
     let old_files = visit_dirs(old)?;
     let old_schemas = parse_schemas(old_files)?;
     let new_files = visit_dirs(new)?;
@@ -82,9 +84,10 @@ fn compare_schemas(old: &Path, new: &Path) -> Result<()> {
                     == schema.name().expect("no name on old schema")
             })
             .next();
-        match new_schema {
-            Some(new_schema) => SchemaCompatibility::mutual_read(&schema, &new_schema)?,
-            None => {
+        match (new_schema, mutual) {
+            (Some(new_schema), true) => SchemaCompatibility::mutual_read(&schema, &new_schema)?,
+            (Some(new_schema), false) => SchemaCompatibility::can_read(&schema, &new_schema)?,
+            (None, _) => {
                 bail!("schema {:?} does not exist anymore", schema.name())
             }
         }
@@ -103,8 +106,8 @@ fn main() -> Result<()> {
             }
             Ok(_) => {}
         },
-        Commands::Compat { old, new } => {
-            let compatible = compare_schemas(&old, &new);
+        Commands::Compat { old, new, mutual } => {
+            let compatible = compare_schemas(&old, &new, mutual);
             if let Err(e) = compatible {
                 eprintln!("Schemas incompatible: {} [{:?}]", e, e.source());
                 std::process::exit(1);
@@ -213,7 +216,7 @@ mod tests {
                ] 
             }"#,
         );
-        compare_schemas(old_dir.path(), new_dir.path())?;
+        compare_schemas(old_dir.path(), new_dir.path(), true)?;
         Ok(())
     }
 
@@ -260,7 +263,88 @@ mod tests {
                ] 
             }"#,
         );
-        assert!(compare_schemas(old_dir.path(), new_dir.path()).is_err());
+        assert!(compare_schemas(old_dir.path(), new_dir.path(), true).is_err());
+        Ok(())
+    }
+    #[test]
+    fn test_schema_read_compatibility() -> Result<()> {
+        let old_dir = tempdir()?;
+        create_file(
+            &old_dir.path(),
+            "test.avsc",
+            r#"{
+               "name":"test",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name":  "myField",
+                       "doc": "just a field",
+                       "type":"int"
+                   }
+               ] 
+            }"#,
+        );
+
+        let new_dir = tempdir()?;
+        create_file(
+            &new_dir.path(),
+            "test.avsc",
+            r#"{
+               "name":"test",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name":  "myField",
+                       "doc": "just a field",
+                       "type":"long"
+                   }
+               ] 
+            }"#,
+        );
+        compare_schemas(old_dir.path(), new_dir.path(), false)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_schema_read_incompatibility() -> Result<()> {
+        let old_dir = tempdir()?;
+        create_file(
+            &old_dir.path(),
+            "test.avsc",
+            r#"{
+               "name":"test",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name":  "myField",
+                       "doc": "just a field",
+                       "type":"long"
+                   }
+               ] 
+            }"#,
+        );
+
+        let new_dir = tempdir()?;
+        create_file(
+            &new_dir.path(),
+            "test.avsc",
+            r#"{
+               "name":"test",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name":  "myField",
+                       "doc": "just a field",
+                       "type":"int"
+                   }
+               ] 
+            }"#,
+        );
+        assert!(compare_schemas(old_dir.path(), new_dir.path(), false).is_err());
         Ok(())
     }
 
@@ -350,7 +434,7 @@ mod tests {
                ] 
             }"#,
         );
-        compare_schemas(old_dir.path(), new_dir.path())?;
+        compare_schemas(old_dir.path(), new_dir.path(), true)?;
         Ok(())
     }
     #[test]
@@ -439,7 +523,7 @@ mod tests {
                ] 
             }"#,
         );
-        assert!(compare_schemas(old_dir.path(), new_dir.path()).is_err());
+        assert!(compare_schemas(old_dir.path(), new_dir.path(), true).is_err());
         Ok(())
     }
 }
