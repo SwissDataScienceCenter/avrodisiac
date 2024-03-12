@@ -85,8 +85,8 @@ fn compare_schemas(old: &Path, new: &Path, mutual: bool) -> Result<()> {
             })
             .next();
         match (new_schema, mutual) {
-            (Some(new_schema), true) => SchemaCompatibility::mutual_read(&schema, &new_schema)?,
-            (Some(new_schema), false) => SchemaCompatibility::can_read(&schema, &new_schema)?,
+            (Some(new_schema), true) => SchemaCompatibility::mutual_read(&new_schema, &schema)?,
+            (Some(new_schema), false) => SchemaCompatibility::can_read(&new_schema, &schema)?,
             (None, _) => {
                 bail!("schema {:?} does not exist anymore", schema.name())
             }
@@ -280,7 +280,7 @@ mod tests {
                    {
                        "name":  "myField",
                        "doc": "just a field",
-                       "type":"int"
+                       "type":"long"
                    }
                ] 
             }"#,
@@ -298,7 +298,7 @@ mod tests {
                    {
                        "name":  "myField",
                        "doc": "just a field",
-                       "type":"long"
+                       "type":"int"
                    }
                ] 
             }"#,
@@ -321,7 +321,7 @@ mod tests {
                    {
                        "name":  "myField",
                        "doc": "just a field",
-                       "type":"long"
+                       "type":"int"
                    }
                ] 
             }"#,
@@ -339,7 +339,7 @@ mod tests {
                    {
                        "name":  "myField",
                        "doc": "just a field",
-                       "type":"int"
+                       "type":"long"
                    }
                ] 
             }"#,
