@@ -150,6 +150,25 @@ mod tests {
         validate_schemas(&dir.path())?;
         Ok(())
     }
+    #[test]
+    fn test_invalid_schema_validation() -> Result<()> {
+        let dir = tempdir()?;
+        create_file(
+            &dir.path(),
+            "test.avsc",
+            r#"{
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "type":"int"
+                   }
+               ] 
+            }"#,
+        );
+        assert!(validate_schemas(&dir.path()).is_err());
+        Ok(())
+    }
 
     #[test]
     fn test_schema_compatibility() -> Result<()> {
@@ -195,6 +214,232 @@ mod tests {
             }"#,
         );
         compare_schemas(old_dir.path(), new_dir.path())?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_schema_incompatibility() -> Result<()> {
+        let old_dir = tempdir()?;
+        create_file(
+            &old_dir.path(),
+            "test.avsc",
+            r#"{
+               "name":"test",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name":  "myField",
+                       "doc": "just a field",
+                       "type":"int"
+                   }
+               ] 
+            }"#,
+        );
+
+        let new_dir = tempdir()?;
+        create_file(
+            &new_dir.path(),
+            "test.avsc",
+            r#"{
+               "name":"test",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name":  "myField",
+                       "doc": "just a field",
+                       "type":"string"
+                   },
+                   {
+                       "name":  "myOtherField",
+                       "doc": "just a field",
+                       "type":"int",
+                       "default":1
+                   }
+               ] 
+            }"#,
+        );
+        assert!(compare_schemas(old_dir.path(), new_dir.path()).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_schema_compatibility_multiple_files() -> Result<()> {
+        let old_dir = tempdir()?;
+        create_file(
+            &old_dir.path(),
+            "test.avsc",
+            r#"{
+               "name":"test",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name": "myField",
+                       "doc": "just a field",
+                       "type":"int"
+                   },
+                   {
+                       "name": "nest",
+                       "doc": "nested field",
+                       "type": "my.namespace.nested"
+                   }
+               ] 
+            }"#,
+        );
+
+        create_file(
+            &old_dir.path(),
+            "test2.avsc",
+            r#"{
+               "name":"nested",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name": "myNestedField",
+                       "doc": "just a field",
+                       "type":"int"
+                   }
+               ] 
+            }"#,
+        );
+
+        let new_dir = tempdir()?;
+        create_file(
+            &new_dir.path(),
+            "test.avsc",
+            r#"{
+               "name":"test",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name":  "myField",
+                       "doc": "just a field",
+                       "type":"int"
+                   },
+                   {
+                       "name":  "myOtherField",
+                       "doc": "just a field",
+                       "type":"int",
+                       "default":1
+                   },
+                   {
+                       "name": "nest",
+                       "doc": "nested field",
+                       "type": "my.namespace.nested"
+                   }
+               ] 
+            }"#,
+        );
+        create_file(
+            &new_dir.path(),
+            "test3.avsc",
+            r#"{
+               "name":"nested",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name": "myNestedField",
+                       "doc": "just a field",
+                       "type":"int"
+                   }
+               ] 
+            }"#,
+        );
+        compare_schemas(old_dir.path(), new_dir.path())?;
+        Ok(())
+    }
+    #[test]
+    fn test_schema_incompatibility_multiple_files() -> Result<()> {
+        let old_dir = tempdir()?;
+        create_file(
+            &old_dir.path(),
+            "test.avsc",
+            r#"{
+               "name":"test",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name": "myField",
+                       "doc": "just a field",
+                       "type":"int"
+                   },
+                   {
+                       "name": "nest",
+                       "doc": "nested field",
+                       "type": "my.namespace.nested"
+                   }
+               ] 
+            }"#,
+        );
+
+        create_file(
+            &old_dir.path(),
+            "test2.avsc",
+            r#"{
+               "name":"nested",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name": "myNestedField",
+                       "doc": "just a field",
+                       "type":"int"
+                   }
+               ] 
+            }"#,
+        );
+
+        let new_dir = tempdir()?;
+        create_file(
+            &new_dir.path(),
+            "test.avsc",
+            r#"{
+               "name":"test",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name":  "myField",
+                       "doc": "just a field",
+                       "type":"int"
+                   },
+                   {
+                       "name":  "myOtherField",
+                       "doc": "just a field",
+                       "type":"int",
+                       "default":1
+                   },
+                   {
+                       "name": "nest",
+                       "doc": "nested field",
+                       "type": "my.namespace.nested"
+                   }
+               ] 
+            }"#,
+        );
+        create_file(
+            &new_dir.path(),
+            "test3.avsc",
+            r#"{
+               "name":"nested",
+               "namespace":"my.namespace",
+               "type":"record",
+               "fields":[
+                   {
+                       "name": "myNestedField",
+                       "doc": "just a field",
+                       "type":"string"
+                   }
+               ] 
+            }"#,
+        );
+        assert!(compare_schemas(old_dir.path(), new_dir.path()).is_err());
         Ok(())
     }
 }

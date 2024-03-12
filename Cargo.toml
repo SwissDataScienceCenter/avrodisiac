@@ -13,4 +13,4 @@ tempfile = "3.10.1"
 
 [patch.crates-io]
 # apache-avro = { git = "https://github.com/apache/avro.git"}
-apache-avro = { git = "https://github.com/Panaetius/avro.git", branch="add-rust-logical-type-compatibility"}
+apache-avro = { git = "https://github.com/Panaetius/avro.git", branch="add-ref-compatibility-check"}
